@@ -24,7 +24,6 @@ static Window *s_main_window;
 static TextLayer *s_remaining_label;
 static TextLayer *s_duration_label;
 static Layer *s_sidebar_layer;
-static BitmapLayer *s_reset_icon_layer;
 static BitmapLayer *s_toggle_icon_layer;
 static BitmapLayer *s_play_pause_icon_layer;
 static GBitmap *s_play_bitmap;
@@ -56,11 +55,7 @@ static void sync_display(void) {
   text_layer_set_text(s_duration_label, s_duration_text);
 }
 
-static void set_reset_icon_visible(bool visible) {
-  layer_set_hidden(bitmap_layer_get_layer(s_reset_icon_layer), !visible);
-}
-
-static void set_toggle_icon_visible(bool visible) {
+static void set_toggle_reset_icon_visible(bool visible) {
   layer_set_hidden(bitmap_layer_get_layer(s_toggle_icon_layer), !visible);
 }
 
@@ -74,6 +69,14 @@ static void show_play_icon(void) {
 
 static void show_pause_icon(void) {
   bitmap_layer_set_bitmap(s_play_pause_icon_layer, s_pause_bitmap);
+}
+
+static void show_toggle_icon(void) {
+  bitmap_layer_set_bitmap(s_toggle_icon_layer, s_toggle_bitmap);
+}
+
+static void show_reset_icon(void) {
+  bitmap_layer_set_bitmap(s_toggle_icon_layer, s_reset_bitmap);
 }
 
 static void cancel_wakeup(void) {
@@ -127,8 +130,7 @@ static void handle_timer_expired(bool should_vibrate) {
   }
 
   s_state.timer_state = TIMER_STATE_PAUSED;
-  set_reset_icon_visible(false);
-  set_toggle_icon_visible(false);
+  set_toggle_reset_icon_visible(false);
   set_play_pause_icon_visible(false);
 
   if (s_state.duration_sec == BRUSH_DURATION) {
@@ -170,8 +172,7 @@ static void play_timer(void) {
 
   show_pause_icon();
   set_play_pause_icon_visible(true);
-  set_reset_icon_visible(false);
-  set_toggle_icon_visible(false);
+  set_toggle_reset_icon_visible(false);
 
   if (s_play_start_delay_timer) {
     app_timer_cancel(s_play_start_delay_timer);
@@ -198,8 +199,12 @@ static void pause_timer(void) {
   sync_display();
   tick_timer_service_unsubscribe();
 
-  set_reset_icon_visible(s_state.duration_sec != s_state.remaining_sec);
-  set_toggle_icon_visible(s_state.duration_sec == s_state.remaining_sec);
+  if (s_state.duration_sec == s_state.remaining_sec) {
+    show_toggle_icon();
+  } else {
+    show_reset_icon();
+  }
+  set_toggle_reset_icon_visible(true);
   show_play_icon();
   set_play_pause_icon_visible(true);
 }
@@ -211,8 +216,8 @@ static void reset_timer(void) {
 
   show_play_icon();
   set_play_pause_icon_visible(true);
-  set_reset_icon_visible(false);
-  set_toggle_icon_visible(true);
+  show_toggle_icon();
+  set_toggle_reset_icon_visible(true);
 }
 
 static void toggle_timer(void) {
@@ -224,26 +229,21 @@ static void toggle_timer(void) {
 
   show_play_icon();
   set_play_pause_icon_visible(true);
-  set_reset_icon_visible(false);
-  set_toggle_icon_visible(true);
+  show_toggle_icon();
+  set_toggle_reset_icon_visible(true);
 }
 
-static void reset_click_handler(ClickRecognizerRef recognizer, void *context) {
-  bool reset_icon_is_hidden =
-      layer_get_hidden(bitmap_layer_get_layer(s_reset_icon_layer));
-  if (reset_icon_is_hidden) {
-    return;
-  }
-  reset_timer();
-}
-
-static void toggle_click_handler(ClickRecognizerRef recognizer, void *context) {
-  bool toggle_icon_is_hidden =
+static void toggle_reset_click_handler(ClickRecognizerRef recognizer,
+                                       void *context) {
+  bool icon_is_hidden =
       layer_get_hidden(bitmap_layer_get_layer(s_toggle_icon_layer));
-  if (toggle_icon_is_hidden) {
+  if (icon_is_hidden)
     return;
+  if (s_state.duration_sec == s_state.remaining_sec) {
+    toggle_timer();
+  } else {
+    reset_timer();
   }
-  toggle_timer();
 }
 
 static void play_pause_click_handler(ClickRecognizerRef recognizer,
@@ -262,9 +262,8 @@ static void play_pause_click_handler(ClickRecognizerRef recognizer,
 }
 
 static void click_config_provider(void *context) {
-  window_single_click_subscribe(BUTTON_ID_UP, toggle_click_handler);
-  window_single_click_subscribe(BUTTON_ID_SELECT, play_pause_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, reset_click_handler);
+  window_single_click_subscribe(BUTTON_ID_UP, toggle_reset_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, play_pause_click_handler);
 }
 
 // TODO: swap to a text layer?
@@ -324,12 +323,16 @@ static void main_window_load(Window *window) {
 
   GRect sidebar_bounds = layer_get_bounds(s_sidebar_layer);
 
+  bool show_reset_icon = s_state.timer_state == TIMER_STATE_PAUSED &&
+                         s_state.duration_sec != s_state.remaining_sec;
+  GBitmap *toggle_reset_bitmap =
+      show_reset_icon ? s_reset_bitmap : s_toggle_bitmap;
+
   s_toggle_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      0, sidebar_bounds, gbitmap_get_bounds(s_toggle_bitmap).size));
-  bitmap_layer_set_bitmap(s_toggle_icon_layer, s_toggle_bitmap);
+      0, sidebar_bounds, gbitmap_get_bounds(toggle_reset_bitmap).size));
+  bitmap_layer_set_bitmap(s_toggle_icon_layer, toggle_reset_bitmap);
   bitmap_layer_set_compositing_mode(s_toggle_icon_layer, GCompOpSet);
-  set_toggle_icon_visible(s_state.timer_state == TIMER_STATE_PAUSED &&
-                          s_state.duration_sec == s_state.remaining_sec);
+  set_toggle_reset_icon_visible(s_state.timer_state == TIMER_STATE_PAUSED);
   layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_toggle_icon_layer));
 
   GBitmap *play_pause_bitmap;
@@ -340,20 +343,12 @@ static void main_window_load(Window *window) {
   }
 
   s_play_pause_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      1, sidebar_bounds, gbitmap_get_bounds(play_pause_bitmap).size));
+      2, sidebar_bounds, gbitmap_get_bounds(play_pause_bitmap).size));
   bitmap_layer_set_bitmap(s_play_pause_icon_layer, play_pause_bitmap);
   bitmap_layer_set_compositing_mode(s_play_pause_icon_layer, GCompOpSet);
-  set_play_pause_icon_visible(s_auto_advance_timer == NULL);
+  set_play_pause_icon_visible(s_state.remaining_sec != 0);
   layer_add_child(s_sidebar_layer,
                   bitmap_layer_get_layer(s_play_pause_icon_layer));
-
-  s_reset_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      2, sidebar_bounds, gbitmap_get_bounds(s_reset_bitmap).size));
-  bitmap_layer_set_bitmap(s_reset_icon_layer, s_reset_bitmap);
-  bitmap_layer_set_compositing_mode(s_reset_icon_layer, GCompOpSet);
-  set_reset_icon_visible(s_state.timer_state == TIMER_STATE_PAUSED &&
-                         s_state.duration_sec != s_state.remaining_sec);
-  layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_reset_icon_layer));
 
   window_set_click_config_provider(window, click_config_provider);
 
@@ -362,7 +357,6 @@ static void main_window_load(Window *window) {
 
 static void main_window_unload(Window *window) {
   text_layer_destroy(s_remaining_label);
-  bitmap_layer_destroy(s_reset_icon_layer);
   bitmap_layer_destroy(s_toggle_icon_layer);
   bitmap_layer_destroy(s_play_pause_icon_layer);
   layer_destroy(s_sidebar_layer);
