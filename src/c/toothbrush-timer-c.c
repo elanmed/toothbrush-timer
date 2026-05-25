@@ -35,6 +35,7 @@ static AppTimer *s_auto_advance_timer;
 static char s_remaining_text[8];
 static char s_duration_text[8];
 static WakeupId s_wakeup_id = -1;
+static Layer *s_background_layer;
 
 static void play_timer(void);
 static void toggle_timer(void);
@@ -55,6 +56,7 @@ static void sync_display(void) {
 
   format_time(s_state.duration_sec, s_duration_text, sizeof(s_duration_text));
   text_layer_set_text(s_duration_label, s_duration_text);
+  layer_mark_dirty(s_background_layer);
 }
 
 static void set_toggle_reset_icon_visible(bool visible) {
@@ -297,11 +299,26 @@ static GRect centered_icon_rect_in_slot(int slot_index, GRect sidebar_bounds,
   return GRect(icon_x, icon_y, icon_size.w, icon_size.h);
 }
 
+static void background_layer_update_proc(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  int16_t fill_height =
+      bounds.size.h * s_state.remaining_sec / s_state.duration_sec;
+  int16_t fill_top = bounds.size.h - fill_height;
+  graphics_context_set_fill_color(ctx, GColorYellow);
+  graphics_fill_rect(ctx, GRect(0, fill_top, bounds.size.w, fill_height), 0,
+                     GCornerNone);
+}
+
 static void main_window_load(Window *window) {
   Layer *root_layer = window_get_root_layer(window);
   GRect root_bounds = layer_get_bounds(root_layer);
 
-  window_set_background_color(window, GColorYellow);
+  window_set_background_color(window, GColorLightGray);
+
+  s_background_layer = layer_create(
+      GRect(0, 0, root_bounds.size.w - SIDEBAR_WIDTH, root_bounds.size.h));
+  layer_set_update_proc(s_background_layer, background_layer_update_proc);
+  layer_add_child(root_layer, s_background_layer);
 
   int slot_height = root_bounds.size.h / ICON_SLOT_COUNT;
   int timer_label_top = (slot_height - REMAINING_FONT_SIZE) / 2;
@@ -371,6 +388,7 @@ static void main_window_unload(Window *window) {
   bitmap_layer_destroy(s_toggle_icon_layer);
   bitmap_layer_destroy(s_play_pause_icon_layer);
   layer_destroy(s_sidebar_layer);
+  layer_destroy(s_background_layer);
 }
 
 static void save_state(void) {
