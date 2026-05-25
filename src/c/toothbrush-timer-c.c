@@ -1,5 +1,8 @@
 #include <pebble.h>
 
+// TODO:
+// 1. Persist timer on close
+
 #define BRUSH_DURATION 120
 #define WAIT_DURATION 1800
 #define SIDEBAR_WIDTH 30
@@ -7,8 +10,6 @@
 #define AUTO_ADVANCE_DELAY_MS 2400
 #define REMAINING_FONT_SIZE 42
 #define DURATION_FONT_SIZE 20
-// move icons?
-// better icons
 
 typedef enum { TIMER_STATE_PAUSED, TIMER_STATE_PLAYING } TimerState;
 
@@ -198,7 +199,7 @@ static void toggle_timer(void) {
   set_toggle_icon_visible(true);
 }
 
-static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
+static void reset_click_handler(ClickRecognizerRef recognizer, void *context) {
   bool reset_icon_is_hidden =
       layer_get_hidden(bitmap_layer_get_layer(s_reset_icon_layer));
   if (reset_icon_is_hidden) {
@@ -207,7 +208,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   reset_timer();
 }
 
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+static void toggle_click_handler(ClickRecognizerRef recognizer, void *context) {
   bool toggle_icon_is_hidden =
       layer_get_hidden(bitmap_layer_get_layer(s_toggle_icon_layer));
   if (toggle_icon_is_hidden) {
@@ -216,7 +217,8 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   toggle_timer();
 }
 
-static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
+static void play_pause_click_handler(ClickRecognizerRef recognizer,
+                                     void *context) {
   bool play_pause_icon_is_hidden =
       layer_get_hidden(bitmap_layer_get_layer(s_play_pause_icon_layer));
   if (play_pause_icon_is_hidden) {
@@ -231,9 +233,9 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 static void click_config_provider(void *context) {
-  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
+  window_single_click_subscribe(BUTTON_ID_UP, toggle_click_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, play_pause_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, reset_click_handler);
 }
 
 static void sidebar_layer_update_proc(Layer *layer, GContext *ctx) {
@@ -292,25 +294,25 @@ static void main_window_load(Window *window) {
 
   GRect sidebar_bounds = layer_get_bounds(s_sidebar_layer);
 
-  s_reset_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      0, sidebar_bounds, gbitmap_get_bounds(s_reset_bitmap).size));
-  bitmap_layer_set_bitmap(s_reset_icon_layer, s_reset_bitmap);
-  bitmap_layer_set_compositing_mode(s_reset_icon_layer, GCompOpSet);
-  layer_set_hidden(bitmap_layer_get_layer(s_reset_icon_layer), true);
-  layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_reset_icon_layer));
-
   s_toggle_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      1, sidebar_bounds, gbitmap_get_bounds(s_toggle_bitmap).size));
+      0, sidebar_bounds, gbitmap_get_bounds(s_toggle_bitmap).size));
   bitmap_layer_set_bitmap(s_toggle_icon_layer, s_toggle_bitmap);
   bitmap_layer_set_compositing_mode(s_toggle_icon_layer, GCompOpSet);
   layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_toggle_icon_layer));
 
   s_play_pause_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      2, sidebar_bounds, gbitmap_get_bounds(s_play_bitmap).size));
+      1, sidebar_bounds, gbitmap_get_bounds(s_play_bitmap).size));
   bitmap_layer_set_bitmap(s_play_pause_icon_layer, s_play_bitmap);
   bitmap_layer_set_compositing_mode(s_play_pause_icon_layer, GCompOpSet);
   layer_add_child(s_sidebar_layer,
                   bitmap_layer_get_layer(s_play_pause_icon_layer));
+
+  s_reset_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
+      2, sidebar_bounds, gbitmap_get_bounds(s_reset_bitmap).size));
+  bitmap_layer_set_bitmap(s_reset_icon_layer, s_reset_bitmap);
+  bitmap_layer_set_compositing_mode(s_reset_icon_layer, GCompOpSet);
+  layer_set_hidden(bitmap_layer_get_layer(s_reset_icon_layer), true);
+  layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_reset_icon_layer));
 
   window_set_click_config_provider(window, click_config_provider);
 
