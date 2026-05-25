@@ -4,7 +4,7 @@
 #define WAIT_DURATION 1800
 #define SIDEBAR_WIDTH 30
 #define ICON_SLOT_COUNT 3
-#define AUTO_ADVANCE_DELAY_MS 4000
+#define AUTO_ADVANCE_DELAY_MS 2400
 #define PLAY_START_DELAY_MS 1000
 
 typedef enum { TIMER_STATE_PAUSED, TIMER_STATE_PLAYING } TimerState;
@@ -86,8 +86,25 @@ static void on_second_tick(struct tm *tick_time, TimeUnits units_changed) {
   s_state.remaining_sec -= 1;
   sync_display();
 
-  if (s_state.remaining_sec > 0)
+  if (s_state.duration_sec == BRUSH_DURATION) {
+    if (s_state.remaining_sec == 90 || s_state.remaining_sec == 60 ||
+        s_state.remaining_sec == 30) {
+      vibes_double_pulse();
+    }
+  }
+
+  if (s_state.remaining_sec > 0) {
     return;
+  }
+
+  static const uint32_t end_of_phase_segments[] = {200, 100, 200,  100, 200,
+                                                   100, 200, 1000, 200, 100,
+                                                   200, 100, 200,  100, 200};
+  static const VibePattern end_of_phase_pattern = {
+      .durations = end_of_phase_segments,
+      .num_segments = ARRAY_LENGTH(end_of_phase_segments),
+  };
+  vibes_enqueue_custom_pattern(end_of_phase_pattern);
 
   tick_timer_service_unsubscribe();
 
