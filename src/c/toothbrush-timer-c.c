@@ -4,7 +4,7 @@
 #define WAIT_DURATION 1800
 #define SIDEBAR_WIDTH 30
 #define ICON_SLOT_COUNT 3
-#define AUTO_ADVANCE_DELAY_MS 2400
+#define AUTO_ADVANCE_DELAY_MS 4200
 #define REMAINING_FONT_SIZE 42
 #define DURATION_FONT_SIZE 20
 #define PERSIST_KEY_STATE 0
@@ -39,6 +39,8 @@ static WakeupId s_wakeup_id = -1;
 static void play_timer(void);
 static void toggle_timer(void);
 static void handle_timer_expired(bool should_vibrate);
+static GRect centered_icon_rect_in_slot(int slot_index, GRect sidebar_bounds,
+                                        GSize icon_size);
 
 static void format_time(int sec, char *text_ptr, size_t text_size) {
   int minutes = sec / 60;
@@ -63,20 +65,29 @@ static void set_play_pause_icon_visible(bool visible) {
   layer_set_hidden(bitmap_layer_get_layer(s_play_pause_icon_layer), !visible);
 }
 
-static void show_play_icon(void) {
-  bitmap_layer_set_bitmap(s_play_pause_icon_layer, s_play_bitmap);
-}
-
-static void show_pause_icon(void) {
-  bitmap_layer_set_bitmap(s_play_pause_icon_layer, s_pause_bitmap);
+static void set_sidebar_icon(BitmapLayer *icon_layer, int slot_index,
+                             GBitmap *bitmap) {
+  GRect sidebar_bounds = layer_get_bounds(s_sidebar_layer);
+  layer_set_frame(bitmap_layer_get_layer(icon_layer),
+                  centered_icon_rect_in_slot(slot_index, sidebar_bounds,
+                                             gbitmap_get_bounds(bitmap).size));
+  bitmap_layer_set_bitmap(icon_layer, bitmap);
 }
 
 static void show_toggle_icon(void) {
-  bitmap_layer_set_bitmap(s_toggle_icon_layer, s_toggle_bitmap);
+  set_sidebar_icon(s_toggle_icon_layer, 0, s_toggle_bitmap);
 }
 
 static void show_reset_icon(void) {
-  bitmap_layer_set_bitmap(s_toggle_icon_layer, s_reset_bitmap);
+  set_sidebar_icon(s_toggle_icon_layer, 0, s_reset_bitmap);
+}
+
+static void show_play_icon(void) {
+  set_sidebar_icon(s_play_pause_icon_layer, 2, s_play_bitmap);
+}
+
+static void show_pause_icon(void) {
+  set_sidebar_icon(s_play_pause_icon_layer, 2, s_pause_bitmap);
 }
 
 static void cancel_wakeup(void) {
@@ -112,14 +123,13 @@ static void auto_advance_after_wait_callback(void *context) {
 
 static void handle_timer_expired(bool should_vibrate) {
   if (should_vibrate) {
-    static const uint32_t end_of_phase_segments[] = {200, 100, 200,  100, 200,
-                                                     100, 200, 1000, 200, 100,
-                                                     200, 100, 200,  100, 200};
-    static const VibePattern end_of_phase_pattern = {
-        .durations = end_of_phase_segments,
-        .num_segments = ARRAY_LENGTH(end_of_phase_segments),
+    static const uint32_t strong_triple_segments[] = {
+        400, 200, 400, 200, 400, 800, 400, 200, 400, 200, 400};
+    static const VibePattern strong_triple_pattern = {
+        .durations = strong_triple_segments,
+        .num_segments = ARRAY_LENGTH(strong_triple_segments),
     };
-    vibes_enqueue_custom_pattern(end_of_phase_pattern);
+    vibes_enqueue_custom_pattern(strong_triple_pattern);
   }
 
   tick_timer_service_unsubscribe();
@@ -149,7 +159,13 @@ static void on_second_tick(struct tm *tick_time, TimeUnits units_changed) {
   if (s_state.duration_sec == BRUSH_DURATION) {
     if (s_state.remaining_sec == 90 || s_state.remaining_sec == 60 ||
         s_state.remaining_sec == 30) {
-      vibes_double_pulse();
+
+      static const uint32_t tight_triple_segments[] = {200, 100, 200, 100, 200};
+      static const VibePattern tight_triple_pattern = {
+          .durations = tight_triple_segments,
+          .num_segments = ARRAY_LENGTH(tight_triple_segments),
+      };
+      vibes_enqueue_custom_pattern(tight_triple_pattern);
     }
   }
 
@@ -328,24 +344,19 @@ static void main_window_load(Window *window) {
   GBitmap *toggle_reset_bitmap =
       show_reset_icon ? s_reset_bitmap : s_toggle_bitmap;
 
-  s_toggle_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      0, sidebar_bounds, gbitmap_get_bounds(toggle_reset_bitmap).size));
-  bitmap_layer_set_bitmap(s_toggle_icon_layer, toggle_reset_bitmap);
+  s_toggle_icon_layer = bitmap_layer_create(GRectZero);
   bitmap_layer_set_compositing_mode(s_toggle_icon_layer, GCompOpSet);
+  set_sidebar_icon(s_toggle_icon_layer, 0, toggle_reset_bitmap);
   set_toggle_reset_icon_visible(s_state.timer_state == TIMER_STATE_PAUSED);
   layer_add_child(s_sidebar_layer, bitmap_layer_get_layer(s_toggle_icon_layer));
 
-  GBitmap *play_pause_bitmap;
-  if (s_state.timer_state == TIMER_STATE_PAUSED) {
-    play_pause_bitmap = s_play_bitmap;
-  } else {
-    play_pause_bitmap = s_pause_bitmap;
-  }
+  GBitmap *play_pause_bitmap = s_state.timer_state == TIMER_STATE_PAUSED
+                                   ? s_play_bitmap
+                                   : s_pause_bitmap;
 
-  s_play_pause_icon_layer = bitmap_layer_create(centered_icon_rect_in_slot(
-      2, sidebar_bounds, gbitmap_get_bounds(play_pause_bitmap).size));
-  bitmap_layer_set_bitmap(s_play_pause_icon_layer, play_pause_bitmap);
+  s_play_pause_icon_layer = bitmap_layer_create(GRectZero);
   bitmap_layer_set_compositing_mode(s_play_pause_icon_layer, GCompOpSet);
+  set_sidebar_icon(s_play_pause_icon_layer, 2, play_pause_bitmap);
   set_play_pause_icon_visible(s_state.remaining_sec != 0);
   layer_add_child(s_sidebar_layer,
                   bitmap_layer_get_layer(s_play_pause_icon_layer));
