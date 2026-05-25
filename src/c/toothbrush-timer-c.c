@@ -199,16 +199,13 @@ static void pause_timer(void) {
   sync_display();
   tick_timer_service_unsubscribe();
 
-  bool is_at_full_duration = s_state.duration_sec == s_state.remaining_sec;
-  set_reset_icon_visible(!is_at_full_duration);
-  set_toggle_icon_visible(is_at_full_duration);
+  set_reset_icon_visible(s_state.duration_sec != s_state.remaining_sec);
+  set_toggle_icon_visible(s_state.duration_sec == s_state.remaining_sec);
   show_play_icon();
   set_play_pause_icon_visible(true);
 }
 
 static void reset_timer(void) {
-  cancel_wakeup();
-
   s_state.remaining_sec = s_state.duration_sec;
   s_state.timer_state = TIMER_STATE_PAUSED;
   sync_display();
@@ -220,8 +217,6 @@ static void reset_timer(void) {
 }
 
 static void toggle_timer(void) {
-  cancel_wakeup();
-
   int new_duration =
       s_state.duration_sec == BRUSH_DURATION ? WAIT_DURATION : BRUSH_DURATION;
   s_state.duration_sec = new_duration;
@@ -287,6 +282,7 @@ static void wakeup_handler(WakeupId wakeup_id, int32_t cookie) {
   handle_timer_expired(true);
 }
 
+// TODO: swap to a text layer?
 static void sidebar_layer_update_proc(Layer *layer, GContext *ctx) {
   GRect sidebar_bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
