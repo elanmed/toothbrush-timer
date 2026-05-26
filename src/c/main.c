@@ -23,6 +23,7 @@ static AppState s_state;
 static Window *s_main_window;
 static TextLayer *s_remaining_label;
 static TextLayer *s_duration_label;
+static TextLayer *s_sidebar_layer;
 static BitmapLayer *s_toggle_icon_layer;
 static BitmapLayer *s_play_pause_icon_layer;
 static GBitmap *s_play_bitmap;
@@ -35,7 +36,6 @@ static char s_remaining_text[8];
 static char s_duration_text[8];
 static WakeupId s_wakeup_id = -1;
 static Layer *s_background_layer;
-static TextLayer *s_sidebar_layer;
 
 static void play_timer(void);
 static void toggle_timer(void);
@@ -101,10 +101,26 @@ static void cancel_wakeup(void) {
   persist_delete(PERSIST_KEY_WAKEUP_ID);
 }
 
+static void set_remaining_sec_and_epoch(int remaining_sec) {
+  s_state.remaining_sec = remaining_sec;
+  s_state.end_epoch = time(NULL) + remaining_sec;
+}
+
 static void schedule_wakeup(void) {
   cancel_wakeup();
-  s_state.end_epoch = time(NULL) + s_state.remaining_sec;
-  s_wakeup_id = wakeup_schedule(s_state.end_epoch, 0, false);
+  int wakeup_remaining_sec = s_state.remaining_sec;
+  if (s_state.duration_sec == BRUSH_DURATION) {
+    if (s_state.remaining_sec > 90) {
+      wakeup_remaining_sec = s_state.remaining_sec - 90;
+    } else if (s_state.remaining_sec > 60) {
+      wakeup_remaining_sec = s_state.remaining_sec - 60;
+    } else if (s_state.remaining_sec > 30) {
+      wakeup_remaining_sec = s_state.remaining_sec - 30;
+    }
+  }
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "wakeup_remaining_sec %d", wakeup_remaining_sec);
+
+  s_wakeup_id = wakeup_schedule(time(NULL) + wakeup_remaining_sec, 0, false);
   if (s_wakeup_id >= 0) {
     persist_write_int(PERSIST_KEY_WAKEUP_ID, s_wakeup_id);
   }
@@ -115,7 +131,7 @@ static void auto_advance_after_brush_callback(void *context) {
   int new_duration =
       s_state.duration_sec == BRUSH_DURATION ? WAIT_DURATION : BRUSH_DURATION;
   s_state.duration_sec = new_duration;
-  s_state.remaining_sec = new_duration;
+  set_remaining_sec_and_epoch(new_duration);
   play_timer();
 }
 
@@ -123,6 +139,8 @@ static void auto_advance_after_wait_callback(void *context) {
   s_auto_advance_timer = NULL;
   toggle_timer();
 }
+
+static bool should_handle_timer_expired() { return s_state.remaining_sec == 0; }
 
 static void handle_timer_expired() {
   static const uint32_t strong_triple_segments[] = {
@@ -148,29 +166,36 @@ static void handle_timer_expired() {
   }
 }
 
+static bool should_handle_brush_intermediate_vibration() {
+  if (s_state.duration_sec != BRUSH_DURATION) {
+    return false;
+  }
+
+  return s_state.remaining_sec == 90 || s_state.remaining_sec == 60 ||
+         s_state.remaining_sec == 30;
+}
+
+static void handle_brush_intermediate_vibration() {
+  static const uint32_t tight_triple_segments[] = {200, 100, 200, 100, 200};
+  static const VibePattern tight_triple_pattern = {
+      .durations = tight_triple_segments,
+      .num_segments = ARRAY_LENGTH(tight_triple_segments),
+  };
+  vibes_enqueue_custom_pattern(tight_triple_pattern);
+}
+
 static void on_second_tick(struct tm *tick_time, TimeUnits units_changed) {
-  s_state.remaining_sec -= 1;
+  set_remaining_sec_and_epoch(s_state.remaining_sec - 1);
   sync_display();
 
-  if (s_state.duration_sec == BRUSH_DURATION) {
-    if (s_state.remaining_sec == 90 || s_state.remaining_sec == 60 ||
-        s_state.remaining_sec == 30) {
-
-      static const uint32_t tight_triple_segments[] = {200, 100, 200, 100, 200};
-      static const VibePattern tight_triple_pattern = {
-          .durations = tight_triple_segments,
-          .num_segments = ARRAY_LENGTH(tight_triple_segments),
-      };
-      vibes_enqueue_custom_pattern(tight_triple_pattern);
-    }
+  if (should_handle_brush_intermediate_vibration()) {
+    handle_brush_intermediate_vibration();
   }
 
-  if (s_state.remaining_sec > 0) {
-    return;
+  if (should_handle_timer_expired()) {
+    cancel_wakeup();
+    handle_timer_expired();
   }
-
-  cancel_wakeup();
-  handle_timer_expired();
 }
 
 static void begin_second_tick_callback(void *context) {
@@ -222,7 +247,7 @@ static void pause_timer(void) {
 }
 
 static void reset_timer(void) {
-  s_state.remaining_sec = s_state.duration_sec;
+  set_remaining_sec_and_epoch(s_state.duration_sec);
   s_state.timer_state = TIMER_STATE_PAUSED;
   sync_display();
 
@@ -436,7 +461,14 @@ static void init(void) {
 
   if (launch_reason() == APP_LAUNCH_WAKEUP) {
     cancel_wakeup();
-    handle_timer_expired();
+
+    if (should_handle_brush_intermediate_vibration()) {
+      handle_brush_intermediate_vibration();
+    }
+
+    if (should_handle_timer_expired()) {
+      handle_timer_expired();
+    }
   }
 
   if (s_state.timer_state == TIMER_STATE_PLAYING) {
