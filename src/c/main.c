@@ -166,7 +166,7 @@ static void handle_timer_expired() {
   }
 }
 
-static bool should_handle_brush_intermediate_vibration() {
+static bool should_vibrate_brush_quadrant_change() {
   if (s_state.duration_sec != BRUSH_DURATION) {
     return false;
   }
@@ -175,7 +175,15 @@ static bool should_handle_brush_intermediate_vibration() {
          s_state.remaining_sec == 30;
 }
 
-static void handle_brush_intermediate_vibration() {
+static bool should_vibrate_brush_quadrant_change_for_wakeup() {
+  if (s_state.duration_sec != BRUSH_DURATION) {
+    return false;
+  }
+
+  return s_state.remaining_sec > 0 && s_state.remaining_sec <= 90;
+}
+
+static void vibrate_brush_quadrant_change() {
   static const uint32_t tight_triple_segments[] = {200, 100, 200, 100, 200};
   static const VibePattern tight_triple_pattern = {
       .durations = tight_triple_segments,
@@ -188,8 +196,8 @@ static void on_second_tick(struct tm *tick_time, TimeUnits units_changed) {
   set_remaining_sec_and_epoch(s_state.remaining_sec - 1);
   sync_display();
 
-  if (should_handle_brush_intermediate_vibration()) {
-    handle_brush_intermediate_vibration();
+  if (should_vibrate_brush_quadrant_change()) {
+    vibrate_brush_quadrant_change();
   }
 
   if (should_handle_timer_expired()) {
@@ -462,8 +470,8 @@ static void init(void) {
   if (launch_reason() == APP_LAUNCH_WAKEUP) {
     cancel_wakeup();
 
-    if (should_handle_brush_intermediate_vibration()) {
-      handle_brush_intermediate_vibration();
+    if (should_vibrate_brush_quadrant_change_for_wakeup()) {
+      vibrate_brush_quadrant_change();
     }
 
     if (should_handle_timer_expired()) {
