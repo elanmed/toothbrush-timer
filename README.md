@@ -1,6 +1,8 @@
 # toothbrush-timer
 
-A simple timer for brushing your teeth, made for the Pebble watch.
+A simple timer for brushing your teeth, built for the Pebble watch.
+
+![screenshot](./screenshot.png)
 
 ## Features
 
